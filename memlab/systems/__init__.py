@@ -2,12 +2,16 @@
 from __future__ import annotations
 
 from .base import MemorySystem, Retrieval
+from .agentic import AgenticSearch
+from .agentic_files import AgenticFiles
 from .baselines import FullContext, NoMemory, RawSearch
 
 SYSTEMS: dict[str, type[MemorySystem]] = {
     NoMemory.name: NoMemory,
     FullContext.name: FullContext,
     RawSearch.name: RawSearch,
+    AgenticSearch.name: AgenticSearch,
+    AgenticFiles.name: AgenticFiles,
 }
 
 

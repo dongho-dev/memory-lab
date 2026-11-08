@@ -9,6 +9,7 @@ questions already answered are skipped. --dry-run makes no API calls and prints 
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 import sys
 import time
@@ -24,7 +25,6 @@ from .prompts import ANSWER_SYSTEM, build_answer_prompt
 from .systems import make_system
 from .io import utf8_stdout
 
-# Fields that must match when resuming into an existing run directory.
 _IDENTITY_KEYS = ("data", "subset", "system", "params", "model", "effort", "backend")
 
 
@@ -60,30 +60,77 @@ def git_commit() -> str | None:
         return None
 
 
+def _answer_turns(q: Question) -> list[str]:
+    """Turns LongMemEval marks as holding the answer (never shown to systems)."""
+    return [t.content for s in q.sessions for t in s.turns if t.has_answer]
+
+
+def _turn_recall(q: Question, shown: str) -> float | None:
+    """Share of answer turns whose text reached the model. Stricter than session recall:
+    a session can be retrieved while the one turn that matters is left out."""
+    turns = _answer_turns(q)
+    if not turns:
+        return None
+    return sum(1 for t in turns if t[:200] in shown) / len(turns)
+
+
+def _annotate_trace(q: Question, steps: list[dict], chunks) -> list[dict]:
+    """Mark, for each result the model saw, whether it came from an evidence session and
+    whether it contained an answer turn. Done here so the system never sees the labels."""
+    evidence = set(q.answer_session_ids)
+    answers = [t[:200] for t in _answer_turns(q)]
+    sessions = {s.session_id: s for s in q.sessions}
+    for st in steps:
+        if "result_text" in st:
+            text = st.pop("result_text")
+            where = text + " " + json.dumps(st.get("arg", ""), ensure_ascii=False)
+            st["has_answer_turn"] = any(a in text for a in answers)
+            st["evidence_session"] = any(e in where for e in evidence)
+        for r in st.get("results", []):
+            r["evidence_session"] = r["session_id"] in evidence
+            if "chunk" in r:
+                text = chunks[r["chunk"]].text
+            else:
+                s = sessions.get(r["session_id"])
+                text = "\n".join(t.content for t in s.turns) if s else ""
+            r["has_answer_turn"] = any(a in text for a in answers)
+    return steps
+
+
 def answer_one(q: Question, system_name: str, params: dict, llm, max_tokens: int) -> dict:
-    system = make_system(system_name, llm=llm, **params)  # fresh instance: systems are stateful
+    system = make_system(system_name, llm=llm, **params)
     t0 = time.time()
     system.reset()
     for session in q.sessions:
         system.ingest(session)
-    r = system.build_context(q.question, q.question_date)
-    prompt = build_answer_prompt(r.context, q.question, q.question_date)
-    c = llm.complete(ANSWER_SYSTEM, prompt, max_tokens=max_tokens)
     evidence = set(q.answer_session_ids)
-    got = set(r.retrieved_session_ids)
-    return {
-        "question_id": q.question_id,
-        "category": q.category,
-        "hypothesis": c.text,
-        "input_tokens": c.input_tokens,
-        "output_tokens": c.output_tokens,
-        "ingest_input_tokens": r.ingest_input_tokens,
-        "ingest_output_tokens": r.ingest_output_tokens,
-        "context_tokens_est": estimate_tokens(r.context) if r.context else 0,
-        "retrieved_session_ids": r.retrieved_session_ids,
-        "evidence_recall": (len(evidence & got) / len(evidence)) if evidence else None,
-        "latency_s": round(time.time() - t0, 2),
-    }
+    row = {"question_id": q.question_id, "category": q.category}
+    if getattr(system, "agentic", False):
+        a = system.run_agent(llm, q.question, q.question_date)
+        steps = _annotate_trace(q, a.steps, getattr(system, "chunks", []))
+        got, shown = set(a.retrieved_session_ids), a.seen_text
+        row.update(hypothesis=a.text, input_tokens=a.input_tokens, output_tokens=a.output_tokens,
+                   ingest_input_tokens=0, ingest_output_tokens=0,
+                   context_tokens_est=estimate_tokens(shown) if shown else 0,
+                   n_steps=len(steps),
+                   n_search=sum(1 for s in steps if s.get("action") in ("search", "Grep", "Glob")),
+                   n_read=sum(1 for s in steps if s.get("action") in ("read", "Read")),
+                   n_bash=sum(1 for s in steps if s.get("action") == "Bash"),
+                   n_outside=sum(1 for s in steps if s.get("outside")),
+                   trace=steps)
+    else:
+        r = system.build_context(q.question, q.question_date)
+        prompt = build_answer_prompt(r.context, q.question, q.question_date)
+        c = llm.complete(ANSWER_SYSTEM, prompt, max_tokens=max_tokens)
+        got, shown = set(r.retrieved_session_ids), r.context
+        row.update(hypothesis=c.text, input_tokens=c.input_tokens, output_tokens=c.output_tokens,
+                   ingest_input_tokens=r.ingest_input_tokens, ingest_output_tokens=r.ingest_output_tokens,
+                   context_tokens_est=estimate_tokens(r.context) if r.context else 0)
+    row.update(retrieved_session_ids=sorted(got),
+               evidence_recall=(len(evidence & got) / len(evidence)) if evidence else None,
+               answer_turn_recall=_turn_recall(q, shown),
+               latency_s=round(time.time() - t0, 2))
+    return row
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -151,6 +198,7 @@ def main(argv: list[str] | None = None) -> int:
 
     llm = MockLLM() if args.mock else make_llm(args.backend, args.model, effort)
     writer = JsonlWriter(hyp_path)
+    trace_writer = JsonlWriter(run_dir / "traces.jsonl")
     failures = 0
     with ThreadPoolExecutor(max_workers=max(1, args.workers)) as pool:
         futures = {pool.submit(answer_one, q, args.system, params, llm, args.max_tokens): q for q in todo}
@@ -158,13 +206,18 @@ def main(argv: list[str] | None = None) -> int:
             q = futures[fut]
             try:
                 row = fut.result()
-            except Exception as e:  # keep going; a re-run retries only the failures
+            except Exception as e:
                 failures += 1
                 print(f"  ! {q.question_id}: {type(e).__name__}: {e}", file=sys.stderr)
                 continue
+            trace = row.pop("trace", None)
+            if trace is not None:
+                trace_writer.write({"question_id": q.question_id, "question": q.question,
+                                    "answer": q.answer, "hypothesis": row["hypothesis"], "steps": trace})
             writer.write(row)
+            extra = f" steps={row['n_steps']}" if "n_steps" in row else ""
             print(f"  {i}/{len(todo)} {q.question_id} ({row['category']}) "
-                  f"in={row['input_tokens']:,} out={row['output_tokens']:,} {row['latency_s']}s")
+                  f"in={row['input_tokens']:,} out={row['output_tokens']:,}{extra} {row['latency_s']}s")
     if failures:
         print(f"{failures} questions failed; run the same command again to retry them.", file=sys.stderr)
         return 1
@@ -187,6 +240,11 @@ def dry_run(questions: list[Question], system: str, params: dict, model: str, ma
     print(f"  total ≈ {tin:,} in + {tout:,} out (output assumed {llm.assumed_output_tokens}/question)")
     if recalls:
         print(f"  evidence recall (no API needed) = {sum(recalls) / len(recalls):.2f}")
+    turn = [r["answer_turn_recall"] for r in rows if r.get("answer_turn_recall") is not None]
+    if turn and not any("n_steps" in r for r in rows):
+        print(f"  answer-turn recall (no API needed) = {sum(turn) / len(turn):.2f}")
+    if any("n_steps" in r for r in rows):
+        print("  (agentic: the estimator never answers, so this is the worst case: every step used)")
     print(f"  estimated answer cost ≈ ${cost:.2f}" if cost is not None else "  (no price for this model)")
     return 0
 

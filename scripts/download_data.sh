@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# Download the cleaned LongMemEval files (Sept 2025 release) into data/.
-#   longmemeval_s_cleaned.json  ~50 sessions (~115k tokens) of history per question
-#   longmemeval_oracle.json     only the evidence sessions: "perfect retrieval" reading ceiling
-# The ~1.5M-token _m file is optional: bash scripts/download_data.sh m
 set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p data

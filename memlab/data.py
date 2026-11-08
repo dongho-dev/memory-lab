@@ -11,8 +11,6 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# Question categories. Abstention questions are marked by a question_id ending in "_abs";
-# we report them as their own category, the same way the LongMemEval paper does.
 CATEGORIES = [
     "single-session-user",
     "single-session-assistant",
@@ -37,7 +35,7 @@ SHORT = {
 class Turn:
     role: str
     content: str
-    has_answer: bool = False  # LongMemEval marks evidence turns; never shown to systems
+    has_answer: bool = False
 
 
 @dataclass
@@ -92,7 +90,6 @@ def parse_question(raw: dict) -> Question:
         )
         for sid, d, turns in zip(ids, dates, sessions_raw)
     ]
-    # The _s/_m files are already chronological; the oracle file is not.
     sessions.sort(key=lambda s: date_key(s.date))
     return Question(
         question_id=str(raw["question_id"]),

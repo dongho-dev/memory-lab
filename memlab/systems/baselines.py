@@ -47,7 +47,7 @@ class FullContext(MemorySystem):
 class _Chunk:
     session_id: str
     date: str
-    order: tuple[int, int]  # (session index, round index) for chronological output
+    order: tuple[int, int]
     text: str
 
 
