@@ -1,0 +1,20 @@
+"""Registry of memory systems. Add a new layer by implementing MemorySystem and listing it here."""
+from __future__ import annotations
+
+from .base import MemorySystem, Retrieval
+from .baselines import FullContext, NoMemory, RawSearch
+
+SYSTEMS: dict[str, type[MemorySystem]] = {
+    NoMemory.name: NoMemory,
+    FullContext.name: FullContext,
+    RawSearch.name: RawSearch,
+}
+
+
+def make_system(name: str, llm=None, **params) -> MemorySystem:
+    if name not in SYSTEMS:
+        raise ValueError(f"unknown system '{name}'. available: {', '.join(SYSTEMS)}")
+    return SYSTEMS[name](llm=llm, **params)
+
+
+__all__ = ["MemorySystem", "Retrieval", "SYSTEMS", "make_system"]

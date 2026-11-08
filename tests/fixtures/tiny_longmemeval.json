@@ -1,0 +1,58 @@
+[
+  {
+    "question_id": "q_cat",
+    "question_type": "single-session-user",
+    "question": "What is the name of the cat I adopted?",
+    "answer": "Miso",
+    "question_date": "2023/06/01 (Thu) 10:00",
+    "haystack_session_ids": ["s_trip", "answer_cat", "s_recipe", "s_laptop"],
+    "haystack_dates": ["2023/05/01 (Mon) 09:00", "2023/05/10 (Wed) 20:15", "2023/05/15 (Mon) 18:30", "2023/05/20 (Sat) 11:00"],
+    "haystack_sessions": [
+      [{"role": "user", "content": "Can you suggest a two-day itinerary for Kyoto in spring?"},
+       {"role": "assistant", "content": "Day one: Fushimi Inari early, then Gion in the evening. Day two: Arashiyama bamboo grove."}],
+      [{"role": "user", "content": "I just adopted a rescue cat named Miso! What food should a two-year-old cat eat?", "has_answer": true},
+       {"role": "assistant", "content": "Congratulations on adopting Miso! For a two-year-old cat, a high-protein wet food is a good base."},
+       {"role": "user", "content": "How often should I feed the cat?"},
+       {"role": "assistant", "content": "Twice a day is typical for adult cats."}],
+      [{"role": "user", "content": "Give me a quick kimchi fried rice recipe."},
+       {"role": "assistant", "content": "Fry chopped kimchi in butter, add day-old rice, season with gochujang, top with an egg."}],
+      [{"role": "user", "content": "Which laptop is better for programming, a 14-inch or a 16-inch?"},
+       {"role": "assistant", "content": "A 14-inch is more portable; a 16-inch gives more screen space for code."}]
+    ],
+    "answer_session_ids": ["answer_cat"]
+  },
+  {
+    "question_id": "q_city",
+    "question_type": "knowledge-update",
+    "question": "Which city do I live in now?",
+    "answer": "Seoul",
+    "question_date": "2023/09/01 (Fri) 08:00",
+    "haystack_session_ids": ["answer_busan", "s_gym", "answer_seoul"],
+    "haystack_dates": ["2023/03/03 (Fri) 12:00", "2023/05/05 (Fri) 07:30", "2023/08/20 (Sun) 21:00"],
+    "haystack_sessions": [
+      [{"role": "user", "content": "I live in Busan and want good running routes near the beach.", "has_answer": true},
+       {"role": "assistant", "content": "Try the Haeundae beach path or the Gwangalli waterfront."}],
+      [{"role": "user", "content": "Write me a three-day gym split."},
+       {"role": "assistant", "content": "Day 1 push, day 2 pull, day 3 legs."}],
+      [{"role": "user", "content": "I just moved to Seoul last week. Where can I live near a running track in the city?", "has_answer": true},
+       {"role": "assistant", "content": "Areas near the Han River parks are great for runners in Seoul."}]
+    ],
+    "answer_session_ids": ["answer_busan", "answer_seoul"]
+  },
+  {
+    "question_id": "q_dog_abs",
+    "question_type": "single-session-user",
+    "question": "What is the name of my dog?",
+    "answer": "The user never mentioned having a dog; they mentioned a cat named Miso.",
+    "question_date": "2023/06/01 (Thu) 10:00",
+    "haystack_session_ids": ["s_pet", "s_music"],
+    "haystack_dates": ["2023/05/10 (Wed) 20:15", "2023/05/12 (Fri) 22:00"],
+    "haystack_sessions": [
+      [{"role": "user", "content": "My cat Miso keeps scratching the sofa. Any tips?"},
+       {"role": "assistant", "content": "Offer a tall scratching post next to the sofa and reward the cat for using it."}],
+      [{"role": "user", "content": "Recommend some lo-fi playlists for studying."},
+       {"role": "assistant", "content": "Look for long lo-fi mixes with no vocals."}]
+    ],
+    "answer_session_ids": []
+  }
+]

@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.venv/
+.env
+.pytest_cache/
+*.egg-info/
+
+# downloaded datasets and run outputs stay local
+data/*
+!data/.gitkeep
+results/*
+!results/.gitkeep
+
+# raw conversation transcripts are private and stay local
+docs/sessions/

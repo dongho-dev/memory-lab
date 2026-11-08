@@ -1,0 +1,20 @@
+[project]
+name = "memory-lab"
+version = "0.0.1"
+description = "Build agent memory systems one measured layer at a time"
+requires-python = ">=3.10"
+dependencies = ["anthropic>=2.6"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["memlab", "memlab.systems"]
