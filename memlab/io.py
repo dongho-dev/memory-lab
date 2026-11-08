@@ -1,6 +1,7 @@
 """Small helpers for append-only JSONL files (safe to resume after a crash)."""
 from __future__ import annotations
 
+import functools
 import json
 import threading
 from pathlib import Path
@@ -19,6 +20,21 @@ def read_jsonl(path: str | Path) -> list[dict]:
     return rows
 
 
+@functools.lru_cache(maxsize=1)
+def _account_email() -> str:
+    """Claude Code tells the model the signed-in account's email; it must never be saved."""
+    try:
+        data = json.loads((Path.home() / ".claude.json").read_text(encoding="utf-8"))
+        return str((data.get("oauthAccount") or {}).get("emailAddress") or "")
+    except Exception:
+        return ""
+
+
+def redact(text: str) -> str:
+    email = _account_email()
+    return text.replace(email, "[account-email]") if email and email in text else text
+
+
 class JsonlWriter:
     """Thread-safe appender; each row is flushed immediately."""
 
@@ -28,7 +44,7 @@ class JsonlWriter:
         self._lock = threading.Lock()
 
     def write(self, row: dict) -> None:
-        line = json.dumps(row, ensure_ascii=False)
+        line = redact(json.dumps(row, ensure_ascii=False))
         with self._lock, open(self.path, "a", encoding="utf-8") as f:
             f.write(line + "\n")
             f.flush()

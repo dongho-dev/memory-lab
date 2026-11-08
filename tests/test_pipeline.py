@@ -194,3 +194,41 @@ def test_extract_keeps_only_subset_questions(tmp_path):
     out = tmp_path / "small.json"
     assert extract(FIXTURE, want, out) == 1
     assert [q["question_id"] for q in json.loads(out.read_text(encoding="utf-8"))] == list(want)
+
+
+def test_progress_md_with_mock_writes_notes_steps(tmp_path):
+    out = tmp_path / "results"
+    p = run_cli("memlab.run", "--system", "progress_md", "--data", str(FIXTURE), "--mock",
+                "--name", "t_notes", "--out-dir", str(out))
+    assert p.returncode == 0, p.stderr
+    traces = [json.loads(l) for l in (out / "t_notes" / "traces.jsonl").read_text(encoding="utf-8").splitlines()]
+    steps = traces[0]["steps"]
+    assert steps[0]["action"] == "notes" and "notes_text" in [k for s in steps for k in s]
+    assert [s["step"] for s in steps] == list(range(1, len(steps) + 1))
+
+
+def test_chunk_sessions_respects_budget():
+    from memlab.data import load_questions
+    from memlab.systems.progress_md import chunk_sessions
+    q = load_questions(FIXTURE)[0]
+    parts = chunk_sessions(q.sessions, 1)
+    assert len(parts) == len(q.sessions) and sum(len(p) for p in parts) == len(q.sessions)
+
+
+def test_redact_replaces_account_email(monkeypatch):
+    from memlab import io
+    io._account_email.cache_clear()
+    monkeypatch.setattr(io, "_account_email", lambda: "someone@example.com")
+    assert io.redact("mail someone@example.com now") == "mail [account-email] now"
+    assert io.redact("nothing here") == "nothing here"
+
+
+def test_search_log_seeds_progress_and_sets_compact(tmp_path):
+    import json as _json
+    from memlab.prompts import SEARCH_LOG_SEED
+    s = make_system("search_log", compact_window=100000)
+    s.reset()
+    s._write_store(tmp_path)
+    assert (tmp_path / "progress.md").read_text(encoding="utf-8") == SEARCH_LOG_SEED
+    args = s.extra_args()
+    assert args[0] == "--settings" and _json.loads(args[1])["autoCompactWindow"] == 100000

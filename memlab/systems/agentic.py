@@ -31,6 +31,8 @@ class AgentResult:
     steps: list[dict] = field(default_factory=list)
     retrieved_session_ids: list[str] = field(default_factory=list)
     seen_text: str = ""
+    ingest_input_tokens: int = 0
+    ingest_output_tokens: int = 0
 
 
 class AgenticSearch(RawSearch):
