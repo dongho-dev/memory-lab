@@ -107,6 +107,7 @@ class AgenticFiles(MemorySystem):
         super().__init__(llm, bash=bool(bash))
         self.timeout = float(timeout)
         self.bash = bool(bash)
+        self.extra_system = ""
         self.reset()
 
     def reset(self) -> None:
@@ -145,9 +146,15 @@ class AgenticFiles(MemorySystem):
             return self._run_oneshot(llm, prompt)
         raise ValueError("agentic_files needs a Claude Code backend (claude-code-session or claude-code)")
 
+    def after_run(self, root: Path, res: AgentResult) -> None:
+        return None
+
+    def extra_args(self) -> list[str]:
+        return []
+
     def _cmd(self, llm: ClaudeCodeLLM) -> list[str]:
         tools = READ_ONLY_TOOLS + (",Bash" if self.bash else "")
-        system = FILES_SYSTEM + (FILES_BASH_RULE if self.bash else "")
+        system = FILES_SYSTEM + (FILES_BASH_RULE if self.bash else "") + self.extra_system
         cmd = [llm.exe, "-p", "--model", llm.model, "--output-format", "stream-json", "--verbose",
                "--tools", tools, "--strict-mcp-config", "--no-session-persistence",
                "--setting-sources", "", "--system-prompt", system]
@@ -155,7 +162,7 @@ class AgenticFiles(MemorySystem):
             cmd += ["--allowedTools", "Bash"]
         if llm.effort:
             cmd += ["--effort", llm.effort]
-        return cmd
+        return cmd + self.extra_args()
 
     def _run_kept(self, llm: ClaudeCodeSessionLLM, prompt: str) -> AgentResult:
         pool = _pool(llm)
@@ -172,6 +179,7 @@ class AgenticFiles(MemorySystem):
             sp.turn("/clear", 60)
             sp.turn(prompt, self.timeout)
             res = self._parse(list(sp.last), t0, root)
+            self.after_run(root, res)
         except Exception:
             sp.close()
             raise
@@ -192,7 +200,9 @@ class AgenticFiles(MemorySystem):
                     events.append(json.loads(line))
                 except json.JSONDecodeError:
                     continue
-            return self._parse(events, t0, root, p.stderr)
+            res = self._parse(events, t0, root, p.stderr)
+            self.after_run(root, res)
+            return res
         finally:
             shutil.rmtree(root, ignore_errors=True)
 

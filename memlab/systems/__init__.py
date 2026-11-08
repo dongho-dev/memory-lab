@@ -5,6 +5,8 @@ from .base import MemorySystem, Retrieval
 from .agentic import AgenticSearch
 from .agentic_files import AgenticFiles
 from .baselines import FullContext, NoMemory, RawSearch
+from .progress_md import ProgressMd
+from .search_log import SearchLog
 
 SYSTEMS: dict[str, type[MemorySystem]] = {
     NoMemory.name: NoMemory,
@@ -12,6 +14,8 @@ SYSTEMS: dict[str, type[MemorySystem]] = {
     RawSearch.name: RawSearch,
     AgenticSearch.name: AgenticSearch,
     AgenticFiles.name: AgenticFiles,
+    ProgressMd.name: ProgressMd,
+    SearchLog.name: SearchLog,
 }
 
 

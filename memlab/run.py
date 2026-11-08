@@ -110,7 +110,7 @@ def answer_one(q: Question, system_name: str, params: dict, llm, max_tokens: int
         steps = _annotate_trace(q, a.steps, getattr(system, "chunks", []))
         got, shown = set(a.retrieved_session_ids), a.seen_text
         row.update(hypothesis=a.text, input_tokens=a.input_tokens, output_tokens=a.output_tokens,
-                   ingest_input_tokens=0, ingest_output_tokens=0,
+                   ingest_input_tokens=a.ingest_input_tokens, ingest_output_tokens=a.ingest_output_tokens,
                    context_tokens_est=estimate_tokens(shown) if shown else 0,
                    n_steps=len(steps),
                    n_search=sum(1 for s in steps if s.get("action") in ("search", "Grep", "Glob")),

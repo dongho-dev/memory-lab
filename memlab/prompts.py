@@ -92,3 +92,24 @@ Before each tool call, write one short sentence saying why you are making it. Wh
 FILES_BASH_RULE = """
 
 You may also use the shell. The shell already starts in the memory folder, so begin with `ls sessions/` and use relative paths such as `sessions/<file>`. Do not `cd` anywhere else, do not use `$0`, `~` or absolute paths, and if a command fails, retry it inside this folder instead of looking elsewhere. Use only the files in the current directory: do not access anything outside it, and do not use the network."""
+
+NOTES_SYSTEM = """Use progress.md in the current directory as your state document."""
+
+NOTES_SEED = """Because of the context limit, you read these conversations in parts and continue the work from part to part. Write your progress here.
+"""
+
+NOTES_TEMPLATE = """Your past conversations with the user, part {part} of {parts}:
+
+{sessions}"""
+
+FILES_NOTES = """
+
+progress.md in the current directory is the state document you kept while reading these conversations."""
+
+SEARCH_LOG_SYSTEM = """
+
+Use progress.md in the current directory as your state document."""
+
+SEARCH_LOG_SEED = """Your memory is larger than your context, so you cannot see it all at once. Keep searching, and build up here what you tried and what came of it (where you looked, and what was and was not there). Decide for yourself when to stop.
+"""
+
