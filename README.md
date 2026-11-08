@@ -2,7 +2,7 @@
 
 에이전트 메모리 시스템을 **한 층씩, 측정하면서** 만들어가는 실험실.
 
-출발점은 Anthropic의 글 [The components of agent memory](https://www.anthropic.com/research/components-of-agent-memory)(2026-11-06)와, 노션에 L1–L5 계층 메모리를 직접 운영하면서 부딪힌 문제들(매번 직접 불러와야 하는 시동 비용, 낡는 기록, 사람에게 몰리는 쓰기 부담, 맥락을 넘어 끼어드는 기억)이다. 배경과 결정 과정은 [`docs/decisions.md`](docs/decisions.md)에 있다.
+출발점은 Anthropic의 글 [The components of agent memory](https://www.anthropic.com/research/components-of-agent-memory)(2026-11-06)와, 계층형 개인 메모리를 운영할 때 흔히 부딪히는 문제들(매번 직접 불러와야 하는 시동 비용, 낡는 기록, 사람에게 몰리는 쓰기 부담, 맥락을 넘어 끼어드는 기억)이다. 배경과 결정 과정은 [`docs/decisions.md`](docs/decisions.md)에 있다.
 
 ## 원칙
 
@@ -85,7 +85,6 @@ memlab/
 scripts/           데이터 다운로드, 기준선 일괄 실행
 tests/             목 모델 기반 전체 흐름 테스트
 docs/decisions.md  결정과 근거 (누가 정했는지 표시)
-docs/sessions/     대화 원문 (로컬 전용, 저장소에 없음)
 EXPERIMENTS.md     실험 기록
 ```
 
@@ -96,7 +95,7 @@ EXPERIMENTS.md     실험 기록
 - **Stage 2 · 인덱스·주입층**: 작은 목차를 항상 주고, 필요할 때 노트를 꺼낸다.
 - **Stage 3 · 드리밍**: 원문과 대조해 고치고, 병합하고, 잊는다. 변경은 diff로 남겨 사람이 승인한다.
 - **Stage 4 · 자체 평가셋**: LongMemEval이 보지 않는 것. 출처 혼동, 무관한 질문에 끼어들기, 오래된 사실.
-- **Stage 5 · 실전 연결**: MCP 서버로 감싸 에이전트에 붙인다. 첫 테스트베드 후보는 [claude-pipeline](https://github.com/dongho-dev/claude-pipeline)의 팁 풀 (리뷰어 FAIL률로 효과 측정).
+- **Stage 5 · 실전 연결**: MCP 서버로 감싸 에이전트에 붙인다. 첫 테스트베드 후보는 코드 리뷰 에이전트 파이프라인 (리뷰어 FAIL률로 효과 측정).
 
 Stage 1 이후는 아직 제안 단계다. 각 단계는 앞 단계를 숫자로 이겨야 다음으로 간다.
 
