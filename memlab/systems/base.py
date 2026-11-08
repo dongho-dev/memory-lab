@@ -25,9 +25,7 @@ from ..llm import LLM
 @dataclass
 class Retrieval:
     context: str
-    # Sessions the context drew on; used to compute evidence recall (retrieval vs reading failure).
     retrieved_session_ids: list[str] = field(default_factory=list)
-    # LLM tokens spent while *building* memory (0 for the baselines; notes/dreaming will use it).
     ingest_input_tokens: int = 0
     ingest_output_tokens: int = 0
 
@@ -36,7 +34,7 @@ class MemorySystem(ABC):
     name = "base"
 
     def __init__(self, llm: LLM | None = None, **params):
-        self.llm = llm  # optional: for systems that call a model while ingesting
+        self.llm = llm
         self.params = params
 
     def reset(self) -> None:

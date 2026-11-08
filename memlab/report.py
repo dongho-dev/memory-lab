@@ -24,17 +24,20 @@ def build_report(results_dir: str | Path) -> str:
     summaries.sort(key=lambda s: (s["accuracy"] is None, -(s["accuracy"] or 0)))
     cats = [c for c in CATEGORIES if any(c in s["per_category"] for s in summaries)]
     head = ["run", "model", "data", "n", "acc %", "task-avg %"] + [SHORT[c] for c in cats] + [
-        "in tok/q", "ingest tok/q", "evidence recall %", "answer $"]
+        "in tok/q", "ingest tok/q", "evidence recall %", "answer-turn recall %", "steps/q", "answer $"]
     lines = ["# Results", "",
              "acc = share of questions judged correct; task-avg = mean over categories; "
-             "evidence recall = share of evidence sessions the memory surfaced "
-             "(low recall = retrieval failure, high recall + low acc = reading failure).", "",
+             "evidence recall = share of evidence sessions the memory surfaced; "
+             "answer-turn recall = share of the turns that hold the answer that reached the model "
+             "(stricter: a session can be found while the turn that matters is left out). "
+             "steps/q = search/read/answer turns for agentic systems.", "",
              "| " + " | ".join(head) + " |", "|" + "---|" * len(head)]
     for s in summaries:
         row = [s["name"], s.get("model", "?"), s["data"], str(s["n"]), _pct(s["accuracy"]), _pct(s["task_averaged_accuracy"])]
         row += [_pct(s["per_category"].get(c, {}).get("accuracy")) for c in cats]
         row += [f"{s['avg_input_tokens']:,.0f}", f"{s.get('avg_ingest_tokens', 0):,.0f}",
-                _pct(s["evidence_recall"]),
+                _pct(s["evidence_recall"]), _pct(s.get("answer_turn_recall")),
+                "–" if s.get("avg_steps") is None else f"{s['avg_steps']:.1f}",
                 "–" if s["answer_cost_usd"] is None else f"{s['answer_cost_usd']:.2f}"]
         lines.append("| " + " | ".join(row) + " |")
     if not summaries:

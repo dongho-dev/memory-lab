@@ -29,7 +29,6 @@ class LLMJudge:
     def judge(self, q: Question, hypothesis: str) -> tuple[bool, dict]:
         prompt = judge_prompt(q.question_type, q.question, q.answer, hypothesis, q.is_abstention)
         c = self.llm.complete("", prompt, max_tokens=2048)
-        # Same rule as LongMemEval's evaluate_qa.py.
         label = "yes" in c.text.lower()
         return label, {"judge_raw": c.text[:200], "judge_input_tokens": c.input_tokens,
                        "judge_output_tokens": c.output_tokens}
@@ -77,13 +76,14 @@ def summarize(run_dir: str | Path) -> dict:
         "n": len(graded),
         "n_answered": len(hyps),
         "accuracy": (sum(labels) / len(labels)) if labels else None,
-        # Mean over categories, so small categories count as much as large ones.
         "task_averaged_accuracy": (sum(a for a, _ in per_cat.values()) / len(per_cat)) if per_cat else None,
         "per_category": {c: {"accuracy": per_cat[c][0], "n": per_cat[c][1]} for c in CATEGORIES if c in per_cat},
         "avg_input_tokens": avg("input_tokens"),
         "avg_output_tokens": avg("output_tokens"),
         "avg_ingest_tokens": avg("ingest_input_tokens") + avg("ingest_output_tokens"),
         "evidence_recall": (sum(recalls) / len(recalls)) if recalls else None,
+        "answer_turn_recall": avg("answer_turn_recall") if any(hyps[q].get("answer_turn_recall") is not None for q in graded) else None,
+        "avg_steps": avg("n_steps") if any("n_steps" in hyps[q] for q in graded) else None,
         "answer_cost_usd": cost_usd(cfg["model"], tin, tout),
         "judge_cost_usd": None,
     }
@@ -105,6 +105,10 @@ def print_summary(s: dict) -> None:
     print(f"  avg input tokens/question = {s['avg_input_tokens']:,.0f}")
     if s["evidence_recall"] is not None:
         print(f"  evidence recall = {s['evidence_recall']:.2f}")
+    if s.get("answer_turn_recall") is not None:
+        print(f"  answer-turn recall = {s['answer_turn_recall']:.2f}")
+    if s.get("avg_steps") is not None:
+        print(f"  avg steps/question = {s['avg_steps']:.1f}")
     if s["answer_cost_usd"] is not None:
         print(f"  answer cost ≈ ${s['answer_cost_usd']:.2f}")
 

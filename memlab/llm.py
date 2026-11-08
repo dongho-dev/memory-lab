@@ -5,7 +5,6 @@ import re
 from dataclasses import dataclass
 from typing import Protocol
 
-# Rough English chars-per-token for cost estimates only (deliberately conservative).
 CHARS_PER_TOKEN = 3.0
 
 
@@ -31,24 +30,29 @@ class AnthropicLLM:
 
     def __init__(self, model: str = "claude-sonnet-5-5", effort: str | None = None,
                  max_retries: int = 8, timeout: float = 600.0):
-        import anthropic  # imported lazily so tests and dry runs need no key
+        import anthropic
 
         self.client = anthropic.Anthropic(max_retries=max_retries, timeout=timeout)
         self.model = model
         self.effort = effort
 
     def complete(self, system: str, user: str, max_tokens: int = 8192) -> Completion:
+        return self._create(system, [{"role": "user", "content": user}], max_tokens)
+
+    def chat(self, system: str) -> "_ApiChat":
+        return _ApiChat(self, system)
+
+    def _create(self, system: str, messages: list[dict], max_tokens: int) -> Completion:
         kwargs = dict(
             model=self.model,
             max_tokens=max_tokens,
-            messages=[{"role": "user", "content": user}],
+            messages=messages,
         )
         if system:
             kwargs["system"] = system
         if self.effort:
             kwargs["output_config"] = {"effort": self.effort}
         resp = self.client.messages.create(**kwargs)
-        # Thinking blocks (if any) are skipped; only text blocks form the answer.
         text = "".join(b.text for b in resp.content if b.type == "text").strip()
         u = resp.usage
         input_tokens = (
@@ -81,27 +85,19 @@ class ClaudeCodeLLM:
         cmd = [self.exe, "-p", "--model", self.model, "--output-format", "json",
                "--tools", "", "--strict-mcp-config", "--no-session-persistence",
                "--disable-slash-commands",
-               # No user/project/local settings: otherwise the user's global CLAUDE.md is
-               # injected into every answer (checked 2026-11-08). Leaves ~940 fixed tokens of
-               # Claude Code overhead per call, counted in input_tokens.
                "--setting-sources", "",
-               # The CLI always sends a system prompt and the API rejects a blank one, so a
-               # call with no system (the judge) gets the most neutral text instead of
-               # Claude Code's long default prompt.
                "--system-prompt", system or "You are a helpful assistant."]
         if self.effort:
             cmd += ["--effort", self.effort]
         return cmd
 
     def complete(self, system: str, user: str, max_tokens: int = 8192) -> Completion:
-        # max_tokens is not exposed by the CLI; answers are short, so it is ignored.
         import json
         import subprocess
         import time
 
         last = ""
         for attempt in range(self.max_retries):
-            # The prompt goes through stdin: full histories exceed the Windows command-line limit.
             p = subprocess.run(self._cmd(system), input=user, capture_output=True, text=True,
                                encoding="utf-8", timeout=self.timeout, cwd=self.cwd)
             try:
@@ -116,7 +112,7 @@ class ClaudeCodeLLM:
                     return Completion((out.get("result") or "").strip(), tin, u.get("output_tokens") or 0)
                 last = str(out.get("result"))[:500]
                 if "authenticate" in last.lower():
-                    break  # retrying cannot fix a login problem
+                    break
             time.sleep(5 * (attempt + 1))
         raise RuntimeError(f"claude -p failed: {last}")
 
@@ -141,7 +137,7 @@ class _SessionProc:
     def _pump(self) -> None:
         for line in self.proc.stdout:
             self.events.put(line)
-        self.events.put(None)  # process ended
+        self.events.put(None)
 
     def alive(self) -> bool:
         return self.proc.poll() is None
@@ -154,6 +150,7 @@ class _SessionProc:
         self.proc.stdin.write(json.dumps({"type": "user", "message": {"role": "user", "content": text}}) + "\n")
         self.proc.stdin.flush()
         deadline = time.time() + timeout
+        self.last: list[dict] = []
         while True:
             try:
                 line = self.events.get(timeout=max(0.1, deadline - time.time()))
@@ -165,6 +162,7 @@ class _SessionProc:
                 ev = json.loads(line)
             except json.JSONDecodeError:
                 continue
+            self.last.append(ev)
             if ev.get("type") == "result":
                 return ev
 
@@ -192,11 +190,11 @@ class ClaudeCodeSessionLLM(ClaudeCodeLLM):
         self._lock = threading.Lock()
         import atexit
 
-        atexit.register(self.close)  # Windows does not end child processes with the parent
+        atexit.register(self.close)
 
     def _cmd(self, system: str) -> list[str]:
         cmd = super()._cmd(system)
-        cmd.remove("--disable-slash-commands")  # /clear is a slash command
+        cmd.remove("--disable-slash-commands")
         return cmd + ["--input-format", "stream-json", "--verbose",
                       "--output-format", "stream-json"]
 
@@ -207,7 +205,7 @@ class ClaudeCodeSessionLLM(ClaudeCodeLLM):
             q = self._idle.setdefault(system, queue.Queue())
         try:
             return q.get_nowait()
-        except queue.Empty:  # pool grows to the number of concurrent callers
+        except queue.Empty:
             sp = _SessionProc(self._cmd(system), self.cwd)
             with self._lock:
                 self._all.append(sp)
@@ -224,7 +222,7 @@ class ClaudeCodeSessionLLM(ClaudeCodeLLM):
                 ev = sp.turn(user, self.timeout)
             except Exception as e:
                 last = f"{type(e).__name__}: {e}"
-                sp.close()  # drop a broken process; the next try starts a new one
+                sp.close()
             else:
                 if not ev.get("is_error"):
                     self._idle[system].put(sp)
@@ -239,9 +237,87 @@ class ClaudeCodeSessionLLM(ClaudeCodeLLM):
             time.sleep(5 * (attempt + 1))
         raise RuntimeError(f"claude session failed: {last}")
 
+    def chat(self, system: str) -> "_ProcChat":
+        """A multi-turn conversation on one kept-alive process (cleared once at the start)."""
+        sp = self._checkout(system)
+        try:
+            sp.turn("/clear", 60)
+        except Exception:
+            sp.close()
+            raise
+        return _ProcChat(self, system, sp)
+
     def close(self) -> None:
         for sp in self._all:
             sp.close()
+
+
+def _usage_completion(ev: dict) -> Completion:
+    u = ev.get("usage") or {}
+    tin = sum(u.get(k) or 0 for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
+    return Completion((ev.get("result") or "").strip(), tin, u.get("output_tokens") or 0)
+
+
+class _ProcChat:
+    def __init__(self, owner: ClaudeCodeSessionLLM, system: str, sp: _SessionProc):
+        self.owner, self.system, self.sp, self.broken = owner, system, sp, False
+
+    def send(self, text: str) -> Completion:
+        try:
+            ev = self.sp.turn(text, self.owner.timeout)
+        except Exception:
+            self.broken = True
+            raise
+        if ev.get("is_error"):
+            self.broken = True
+            raise RuntimeError(f"claude session error: {str(ev.get('result'))[:300]}")
+        return _usage_completion(ev)
+
+    def close(self) -> None:
+        if self.broken:
+            self.sp.close()
+        else:
+            self.owner._idle[self.system].put(self.sp)
+
+
+class _ReplayChat:
+    """Multi-turn on top of a single-shot complete(): resend the transcript every turn.
+    Used by the one-process-per-call backend, the dry-run estimator and the test mock."""
+
+    def __init__(self, llm, system: str):
+        self.llm, self.system, self.turns = llm, system, []
+
+    def send(self, text: str) -> Completion:
+        self.turns.append(("user", text))
+        if len(self.turns) == 1:
+            prompt = text
+        else:
+            prompt = "\n\n".join(f"[{r}]\n{t}" for r, t in self.turns) + "\n\n[assistant]\n"
+        c = self.llm.complete(self.system, prompt)
+        self.turns.append(("assistant", c.text))
+        return c
+
+    def close(self) -> None:
+        pass
+
+
+class _ApiChat:
+    def __init__(self, llm: "AnthropicLLM", system: str):
+        self.llm, self.system, self.messages = llm, system, []
+
+    def send(self, text: str) -> Completion:
+        self.messages.append({"role": "user", "content": text})
+        c = self.llm._create(self.system, self.messages, 8192)
+        self.messages.append({"role": "assistant", "content": c.text or "(empty)"})
+        return c
+
+    def close(self) -> None:
+        pass
+
+
+def open_chat(llm, system: str):
+    """Start a multi-turn conversation with any backend: chat.send(text) -> Completion, chat.close()."""
+    return llm.chat(system) if hasattr(llm, "chat") else _ReplayChat(llm, system)
 
 
 def make_llm(backend: str, model: str, effort: str | None):
@@ -274,9 +350,18 @@ class MockLLM:
     model = "mock"
 
     def complete(self, system: str, user: str, max_tokens: int = 8192) -> Completion:
-        m = _MEMORY_RE.search(user)
-        ctx = m.group(1).strip() if m else ""
         from .prompts import NO_MEMORY
 
+        if "ACTION:" in system:
+            if "<results" not in user:
+                q = re.search(r"Question: (.*)", user)
+                text = f"REASON: look up the question words.\nACTION: search: {q.group(1) if q else ''}"
+            else:
+                last = user.rsplit("<results", 1)[1]
+                body = last.split(">", 1)[1].rsplit("</results>", 1)[0].strip()
+                text = f"REASON: the results answer it.\nACTION: answer: {body or 'I dont know.'}"
+            return Completion(text, estimate_tokens(system + user), estimate_tokens(text))
+        m = _MEMORY_RE.search(user)
+        ctx = m.group(1).strip() if m else ""
         text = ctx if ctx and ctx != NO_MEMORY else "I don't know."
         return Completion(text, estimate_tokens(system + user), estimate_tokens(text))

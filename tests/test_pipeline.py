@@ -77,8 +77,6 @@ def test_end_to_end_with_mock(tmp_path):
         assert p.returncode == 0, p.stderr
 
     summaries = {d.name: json.loads((d / "summary.json").read_text(encoding="utf-8")) for d in out.iterdir()}
-    # The mock answers by echoing its memory, so: no memory → nothing but abstention is right,
-    # retrieval finds the cat and the new city.
     assert summaries["t_no_memory"]["per_category"]["single-session-user"]["accuracy"] == 0
     assert summaries["t_raw_search"]["per_category"]["single-session-user"]["accuracy"] == 1
     assert summaries["t_raw_search"]["evidence_recall"] == 1
@@ -107,3 +105,92 @@ def test_dry_run_makes_no_files(tmp_path):
     assert p.returncode == 0, p.stderr
     assert "estimated answer cost" in p.stdout
     assert not (tmp_path / "results").exists()
+
+
+def test_agentic_search_with_mock_writes_traces(tmp_path):
+    out = tmp_path / "results"
+    p = run_cli("memlab.run", "--system", "agentic_search", "--param", "k=2", "--data", str(FIXTURE),
+                "--mock", "--name", "t_agent", "--out-dir", str(out))
+    assert p.returncode == 0, p.stderr
+    assert run_cli("memlab.evaluate", str(out / "t_agent"), "--mock").returncode == 0
+    hyps = {r["question_id"]: r for r in map(json.loads, (out / "t_agent" / "hypotheses.jsonl").read_text(encoding="utf-8").splitlines())}
+    assert "Miso" in hyps["q_cat"]["hypothesis"]
+    assert hyps["q_cat"]["n_search"] == 1 and hyps["q_cat"]["answer_turn_recall"] == 1
+    traces = [json.loads(l) for l in (out / "t_agent" / "traces.jsonl").read_text(encoding="utf-8").splitlines()]
+    cat = next(t for t in traces if t["question_id"] == "q_cat")
+    first = cat["steps"][0]
+    assert first["action"] == "search" and first["reason"]
+    assert any(r["has_answer_turn"] for r in first["results"])
+    assert cat["steps"][-1]["action"] == "answer"
+    p = run_cli("memlab.trace", str(out / "t_agent"))
+    assert p.returncode == 0 and "answer turn was shown" in p.stdout
+    p = run_cli("memlab.trace", str(out / "t_agent"), "--show", "q_cat")
+    assert p.returncode == 0 and "why:" in p.stdout
+
+
+def test_answer_turn_recall_for_plain_retrieval(tmp_path):
+    out = tmp_path / "results"
+    p = run_cli("memlab.run", "--system", "raw_search", "--param", "top_k=1", "--data", str(FIXTURE),
+                "--mock", "--name", "t_turn", "--out-dir", str(out))
+    assert p.returncode == 0, p.stderr
+    rows = [json.loads(l) for l in (out / "t_turn" / "hypotheses.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert all("answer_turn_recall" in r for r in rows)
+
+
+def test_agentic_files_with_mock(tmp_path):
+    out = tmp_path / "results"
+    p = run_cli("memlab.run", "--system", "agentic_files", "--data", str(FIXTURE), "--mock",
+                "--name", "t_files", "--out-dir", str(out))
+    assert p.returncode == 0, p.stderr
+    hyps = {r["question_id"]: r for r in map(json.loads, (out / "t_files" / "hypotheses.jsonl").read_text(encoding="utf-8").splitlines())}
+    assert "Miso" in hyps["q_cat"]["hypothesis"] and hyps["q_cat"]["answer_turn_recall"] == 1
+    traces = {t["question_id"]: t for t in map(json.loads, (out / "t_files" / "traces.jsonl").read_text(encoding="utf-8").splitlines())}
+    steps = traces["q_cat"]["steps"]
+    assert steps[0]["action"] == "Grep" and any(s.get("has_answer_turn") for s in steps)
+    assert all("result_text" not in s for s in steps)
+    p = run_cli("memlab.trace", str(out / "t_files"), "--show", "all")
+    assert p.returncode == 0 and "Grep" in p.stdout
+
+
+def test_outside_access_flags_paths_escapes_and_network(tmp_path):
+    from memlab.systems.agentic_files import outside_access
+    root = tmp_path / "store"
+    root.mkdir()
+    inside = str(root / "sessions" / "a.md")
+    assert outside_access({"file_path": inside}, root) == []
+    assert outside_access({"command": "grep -ri rachel sessions/ | head"}, root) == []
+    assert outside_access({"command": "cat C:/Users/x/memory-lab/data/longmemeval_s_cleaned.json"}, root)
+    assert outside_access({"command": "cat /c/Users/x/memory-lab/data/a.json"}, root)
+    assert outside_access({"command": "ls ../.."}, root)
+    assert outside_access({"command": "ls $HOME"}, root)
+    assert outside_access({"command": "curl -L https://huggingface.co/x"}, root)
+    spill = r"C:\Users\x\.claude\projects\C--Users-x-Temp-memlab-files-ab12\t\tool-results\o.txt"
+    assert outside_access({"file_path": spill}, root) == []
+
+
+def test_outside_access_ignores_grep_patterns_and_own_tmp(tmp_path):
+    from memlab.systems.agentic_files import outside_access
+    root = tmp_path / "memlab_files_abc"
+    root.mkdir()
+    assert outside_access({"command": 'grep -n "^user:" sessions/a.md'}, root) == []
+    assert outside_access({"command": "cd /tmp/memlab_files_abc && ls sessions"}, root) == []
+    assert outside_access({"command": "ls /tmp/other"}, root)
+    assert outside_access({"command": "cat /home/u/x"}, root)
+
+
+def test_proportional_counts_sum_and_shape():
+    from memlab.subset import proportional_counts
+    sizes = {"single-session-user": 64, "single-session-assistant": 56, "single-session-preference": 30,
+             "multi-session": 121, "knowledge-update": 72, "temporal-reasoning": 127, "abstention": 30}
+    c = proportional_counts(sizes, 100)
+    assert sum(c.values()) == 100 and c["single-session-preference"] == 6 and c["temporal-reasoning"] >= 25
+
+
+def test_extract_keeps_only_subset_questions(tmp_path):
+    pytest.importorskip("ijson")
+    from memlab.extract import extract
+    raw = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    want = {str(raw[0]["question_id"])}
+    out = tmp_path / "small.json"
+    assert extract(FIXTURE, want, out) == 1
+    assert [q["question_id"] for q in json.loads(out.read_text(encoding="utf-8"))] == list(want)

@@ -36,7 +36,6 @@ def build_answer_prompt(context: str, question: str, question_date: str) -> str:
     )
 
 
-# --- LongMemEval grading templates (verbatim) -------------------------------------------
 
 _JUDGE_DEFAULT = "I will give you a question, a correct answer, and a response from a model. Please answer yes if the response contains the correct answer. Otherwise, answer no. If the response is equivalent to the correct answer or contains all the intermediate steps to get the correct answer, you should also answer yes. If the response only contains a subset of the information required by the answer, answer no. \n\nQuestion: {}\n\nCorrect Answer: {}\n\nModel Response: {}\n\nIs the model response correct? Answer yes or no only."
 
@@ -64,3 +63,32 @@ def judge_prompt(question_type: str, question: str, answer: str, response: str,
     else:
         raise ValueError(f"unknown question type: {question_type}")
     return template.format(question, answer, response)
+
+
+
+AGENT_SYSTEM = ANSWER_SYSTEM + """
+
+Your memory is not shown to you up front. Look things up in it with these actions, one per reply:
+
+search: <query>       keyword search (BM25) over your past conversations. Returns the {k} best-matching excerpts with their session id and date.
+read: <session id>    returns that whole past session.
+answer: <text>        your final answer to the user. Ends the conversation.
+
+Reply in exactly this format:
+REASON: <one or two sentences: what you know so far and why you take this step>
+ACTION: <search: ... | read: ... | answer: ...>
+
+You have at most {max_steps} search/read steps. Keyword search matches words, not meaning: if a search misses, try other words (specific items, names, synonyms). If your memory does not contain the information, answer that you don't know. Keep the final answer concise."""
+
+AGENT_FIRST = """Current date: {question_date}
+Question: {question}"""
+
+FILES_SYSTEM = ANSWER_SYSTEM + """
+
+Your memory of past conversations with this user is in the current directory: one file per past session under sessions/, named <date>_<session id>.md, with the session date in its first line. Look up whatever you need, in whatever way you like.
+
+Before each tool call, write one short sentence saying why you are making it. When you are done, give your final answer to the question, concisely. If your memory does not contain the information, say that you don't know."""
+
+FILES_BASH_RULE = """
+
+You may also use the shell. The shell already starts in the memory folder, so begin with `ls sessions/` and use relative paths such as `sessions/<file>`. Do not `cd` anywhere else, do not use `$0`, `~` or absolute paths, and if a command fails, retry it inside this folder instead of looking elsewhere. Use only the files in the current directory: do not access anything outside it, and do not use the network."""
