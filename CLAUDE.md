@@ -3,7 +3,7 @@
 에이전트 메모리 시스템을 한 층씩, 측정하면서 만드는 저장소다.
 
 ## 먼저 읽을 것
-1. `docs/decisions.md` — 왜 이렇게 만들었나, 누가 정했나 (정리본)
+1. `docs/decisions.md` — 왜 이렇게 만들었나, 누가 정했나 (공개 정리본). 개인 배경까지 담긴 전체본은 로컬 `docs/sessions/decisions-full.md`
 2. `docs/results/README.md` — 실험 결과 한눈에 보기 (문서 하나 = 실험 하나, `<모델>-<effort>-<번호>`)
 3. `EXPERIMENTS.md` — 지금까지의 실험 일지 (시간순)
 4. 원문이 필요할 때만 `docs/sessions/` — 대화 원문 (원본층, **로컬 전용**: gitignore, 공개 저장소에 올리지 않음)
@@ -18,4 +18,5 @@
 - 답변 모델은 Haiku / Sonnet / Opus로 나눠 각각 잰다. effort도 변수로 본다. 실행 이름에 모델과 effort가 붙는다(예: `raw_search_k10@sonnet-5-5-medium`).
 - `docs/decisions.md`를 고칠 때는 출처를 구분한다: [소유자] / [합의] / [제안] / [관찰]. Claude의 제안을 소유자의 결정처럼 쓰지 않는다.
 - `docs/sessions/`의 원문은 수정하지 않고, 커밋하지 않는다(개인 대화라 로컬에만 둔다).
+- 공개 문서(README, decisions, EXPERIMENTS, docs/results)에는 개인 배경, 실명, 개인 저장소·도구 이름을 쓰지 않는다. 그런 내용은 로컬 전체본에 둔다.
 - 테스트: `python -m pytest -q` (목 모델, API 키 불필요)

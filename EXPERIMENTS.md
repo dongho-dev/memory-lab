@@ -66,7 +66,7 @@
   - raw_search에서는 Sonnet과 1문항 차이(MS). 검색으로 못 찾는 SSP 2문항은 모델과 상관없이 똑같이 틀린다.
   - no_memory@haiku가 답변 보류 1문항을 틀렸다. 기억이 없는데 지어낸 답을 했다는 뜻.
   - 주의: 유형당 6문항. 1문항 = 17%p.
-- **다음**: 노션 L1~L5 계층 시스템을 MemorySystem으로 옮겨 Haiku·Sonnet에서 raw_search와 비교 (설계 확정 대기).
+- **다음**: 계층형(L1~L5 포인터 트리) 메모리를 MemorySystem으로 옮겨 Haiku·Sonnet에서 raw_search와 비교 (설계 확정 대기).
 
 ---
 
